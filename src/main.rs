@@ -1,40 +1,55 @@
+use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::app::App;
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::*;
+
 
 const BASE_SPEED : f32 = 500.;
 const TIME_STEP : f32 = 1. / 60.;
 const PLAYER_SPRITE: &str = "player.png";
-const PLAYER_SIZE: (f32,f32) = (32., 32.);
+const PLAYER_SIZE: (f32,f32) = (16., 32.);
 const SPRITE_SCALE: f32 = 5.0;
+const PIXELS_PER_METER: f32 = 20.0;
 
-#[derive(Component)]
-pub struct Player;
-
-#[derive(Component)]
-pub struct Velocity {
-	pub x: f32,
-	pub y: f32,
-}
-
-#[derive(Component)]
-pub struct SpriteSize(pub Vec2);
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugin(LogDiagnosticsPlugin::default())
+        .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(RapierDebugRenderPlugin::default())
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(PIXELS_PER_METER))
+
         .add_startup_system(setup)
         .add_startup_system(spawn_player)
+        .add_startup_system(setup_ground)
+
         .add_system(keyboard_event)
         .add_system(move_player)
+
         .run();
 }
+
+#[derive(Component)]
+pub struct Player;
+
+
+#[derive(Component)]
+pub struct SpriteSize(pub Vec2);
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 }
 
+fn setup_ground(mut commands: Commands) {
+    commands.spawn(RigidBody::Fixed)
+            .insert(TransformBundle::from(Transform::from_xyz(0.0, 0.0, 0.0)))
+            .insert(Collider::cuboid(500.0, 50.0));
+    
+}
+
 fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let bottom = -500.;
+    let bottom = 50.;
     commands.spawn(SpriteBundle {
         texture: asset_server.load(PLAYER_SPRITE),
         transform: Transform {
@@ -45,33 +60,32 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
         ..default()
     })
         .insert(Player)
-        .insert(Velocity { x: 0., y: 0. });
+        .insert(Velocity  { linvel: Vec2::new(1.0, 2.0),
+                            angvel: 0.4,})
+        .insert(RigidBody::Dynamic)
+        .insert(Collider::cuboid(PLAYER_SIZE.0 / 2., PLAYER_SIZE.1 / 2.))
+        .insert(GravityScale(500.0));
 }
 
-fn move_player(mut commands: Commands, mut query: Query<(Entity, &Velocity, &mut Transform, /* &Movable */)>) {
-    for (entity, velocity, mut transform, /* movable */) in query.iter_mut() {
-		let translation = &mut transform.translation;
-		translation.x += velocity.x * TIME_STEP * BASE_SPEED;
-		translation.y += velocity.y * TIME_STEP * BASE_SPEED;
 
-		// if movable.auto_despawn {
-		// 	// despawn when out of screen
-		// 	const MARGIN: f32 = 200.;
-		// 	if translation.y > win_size.h / 2. + MARGIN
-		// 		|| translation.y < -win_size.h / 2. - MARGIN
-		// 		|| translation.x > win_size.w / 2. + MARGIN
-		// 		|| translation.x < -win_size.w / 2. - MARGIN
-		// 	{
-		// 		commands.entity(entity).despawn();
-		// 	}
-		// }
+fn move_player(mut query: Query<(Entity, &Velocity, &mut Transform)>) {
+    for (_entity, velocity, mut transform, /* movable */) in query.iter_mut() {
+		let translation = &mut transform.translation;
+		translation.x += velocity.linvel.x * TIME_STEP * BASE_SPEED;
+		translation.y += velocity.linvel.y * TIME_STEP * BASE_SPEED;
 	}
 }
 
 fn keyboard_event(kb: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, With<Player>>){
     if let Ok(mut velocity) = query.get_single_mut() {
-        velocity.x = if kb.pressed(KeyCode::Left) { -1. }
+        velocity.linvel.x = if kb.pressed(KeyCode::Left) { -1. }
                     else if kb.pressed(KeyCode::Right) { 1. }
+                    else { 
+                0.
+            };
+
+        velocity.linvel.y = if kb.pressed(KeyCode::Down) { -1. }
+                    else if kb.pressed(KeyCode::Up) { 1. }
                     else { 
                 0.
             }
